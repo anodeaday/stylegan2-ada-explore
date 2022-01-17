@@ -1,0 +1,89 @@
+#! C:/Program Files/Nuke12.2v3/nuke-12.2.3.dll -nx
+#write_info Write1 file:"D:/Projects/dev/stylegan2-ada/sources/LANDSCAPES_1K/Landscape_1k_%07d.jpg" format:"1024 1024 1" chans:":rgba.red:rgba.green:rgba.blue:" framerange:"1 3419" fps:"0" colorspace:"default (sRGB)" datatype:"8 bit" transfer:"unknown" views:"main" colorManagement:"Nuke"
+version 12.2 v3
+define_window_layout_xml {<?xml version="1.0" encoding="UTF-8"?>
+<layout version="1.0">
+    <window x="0" y="0" w="1919" h="1028" screen="0">
+        <splitter orientation="1">
+            <split size="40"/>
+            <dock id="" hideTitles="1" activePageId="Toolbar.1">
+                <page id="Toolbar.1"/>
+            </dock>
+            <split size="1256" stretch="1"/>
+            <splitter orientation="2">
+                <split size="579"/>
+                <dock id="" activePageId="Viewer.1">
+                    <page id="Viewer.1"/>
+                </dock>
+                <split size="407"/>
+                <dock id="" activePageId="DAG.1" focus="true">
+                    <page id="DAG.1"/>
+                    <page id="Curve Editor.1"/>
+                    <page id="DopeSheet.1"/>
+                </dock>
+            </splitter>
+            <split size="615"/>
+            <dock id="" activePageId="Properties.1">
+                <page id="Properties.1"/>
+                <page id="uk.co.thefoundry.backgroundrenderview.1"/>
+            </dock>
+        </splitter>
+    </window>
+</layout>
+}
+Root {
+ inputs 0
+ name D:/Projects/dev/stylegan2-ada/sources/Landscape_resize_01.nk
+ frame 423
+ last_frame 3419
+ lock_range true
+ fps 25
+ format "1920 1080 0 0 1920 1080 1 HD_1080"
+ proxy_type scale
+ proxy_format "1024 778 0 0 1024 778 1 1K_Super_35(full-ap)"
+ colorManagement Nuke
+ workingSpaceLUT linear
+ monitorLut sRGB
+ int8Lut sRGB
+ int16Lut sRGB
+ logLut Cineon
+ floatLut linear
+}
+Read {
+ inputs 0
+ file_type jpeg
+ file D:/Projects/dev/stylegan2-ada/sources/LANDSCAPES/Landscape_#######.jpg
+ format "1024 1024 0 0 1024 1024 1 square_1K"
+ last 3419
+ origlast 3419
+ origset true
+ name Read1
+ xpos -40
+ ypos -168
+}
+Reformat {
+ format "1024 1024 0 0 1024 1024 1 square_1K"
+ resize fill
+ name Reformat1
+ xpos -40
+ ypos -82
+}
+Write {
+ file D:/Projects/dev/stylegan2-ada/sources/LANDSCAPES_1K/Landscape_1k_#######.jpg
+ file_type jpeg
+ create_directories true
+ checkHashOnRead false
+ version 2
+ name Write1
+ selected true
+ xpos -40
+ ypos -16
+}
+Viewer {
+ frame 423
+ frame_range 1-3419
+ fps 25
+ name Viewer1
+ xpos -40
+ ypos 135
+}

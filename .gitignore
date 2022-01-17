@@ -1,2 +1,6 @@
 __pycache__/
 .cache/
+*.png
+*.mp4
+*.jpg
+*.pkl
