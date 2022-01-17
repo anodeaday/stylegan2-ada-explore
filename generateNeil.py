@@ -68,21 +68,22 @@ class DNA:
     def mutate_target(self,target,speed):
         for i in range(len(self.genes)):
             if i % 2 == 0:
-                self.generations[target][0][i] += speed
+                self.generations[target][0][i] += speed*15
             else:
-                self.generations[target][0][i] -= speed
+                self.generations[target][0][i] -= speed*15
 
     def mutate_generation(self,overall_progress, evolve=None,frames=None):
         #overall = 0-1 for sequence
         # 1 / 4 = 0.25
         sequence_time = 1 / len(self.generations)
         steps = math.floor(frames * sequence_time)
+
         generation_target = overall_progress / sequence_time
         generation_target = math.floor(generation_target)
 
         #0.24 / 4 = 0.06
         step_size = sequence_time / len(self.generations)
-        step_size *=2
+        step_size *= 2
         #1-0.06 = 0.94
         lerp = np.clip(1-step_size, 0, 1)
         #lerp = pow(lerp, 0.5)
@@ -91,7 +92,7 @@ class DNA:
         if evolve:
             self.mutate_target(generation_target, step_size)
         for i in range(len(self.genes[0])):
-            linear = False
+            linear = True
             if linear:
                 self.genes[0][i] = linear_interpolate(self.genes[0][i],
                                                       self.generations[generation_target][0][i],
@@ -99,8 +100,8 @@ class DNA:
             else:
                 vectors = interpolate_points(self.genes[0][i],
                                              self.generations[generation_target][0][i],
-                                             steps)
-                self.genes[0][i] = vectors[1]
+                                             1-lerp)
+                self.genes[0][i] = vectors
 
 
 def linear_interpolate(code1, code2, alpha):
@@ -116,6 +117,7 @@ def slerp(val, low, high):
     return sin((1.0-val)*omega) / so * low + sin(val*omega) / so * high
 
 def interpolate_points(p1, p2, n_steps=10):
+    return slerp(n_steps,p1,p2)
     # interpolate ratios between the points
     ratios = linspace(0, 1, num=n_steps)
     # linear interpolate vectors
@@ -279,7 +281,7 @@ def generate_images(
 
     sequence_length = 250
     if frames:
-        sequence_length = frames
+        sequence_length = frames[0]
 
     if not use_original:
         for seed_idx, seed in enumerate(seeds):
@@ -305,10 +307,11 @@ def generate_images(
                     #mutation_rate += 1/sequence_length
                     starting_psi += psi_variation / sequence_length
                     out_psi = 1 - starting_psi
-                    out_psi = 1
+                    if truncation_psi:
+                        out_psi = truncation_psi
                     img = generate_image(G, population[i].genes,psi=out_psi)
                     PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{this_outdir}/seed{seed:04d}_pop{i:02d}_run{run:04d}.png')
-                    population = evolve_generation(population, sequence_length, run,evolve=False)
+                    population = evolve_generation(population, sequence_length, run,evolve=True)
 
     else:
         for seed_idx, seed in enumerate(seeds):
@@ -332,7 +335,8 @@ def generate_images(
 
                 starting_psi += psi_variation / num_runs
                 out_psi = 1-starting_psi
-
+                if truncation_psi:
+                    out_psi = truncation_psi
                 img = G(z, label, truncation_psi=out_psi, noise_mode=noise_mode,)
                 img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
                 PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{this_outdir}/seed{seed:04d}_run{run:04d}.png')

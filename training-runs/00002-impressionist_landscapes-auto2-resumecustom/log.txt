@@ -258,3 +258,4 @@ tick 118   kimg 472.0    time 14h 33m 09s  sec/tick 405.1   sec/kimg 101.27  mai
 tick 119   kimg 476.0    time 14h 39m 54s  sec/tick 405.3   sec/kimg 101.33  maintenance 0.0    cpumem 5.85   gpumem 8.08   augment 0.287
 tick 120   kimg 480.0    time 14h 46m 40s  sec/tick 405.8   sec/kimg 101.45  maintenance 0.0    cpumem 5.85   gpumem 7.99   augment 0.290
 Evaluating metrics...
+{"results": {"fid50k_full": 17.179644448920076}, "metric": "fid50k_full", "total_time": 367.0705029964447, "total_time_str": "6m 07s", "num_gpus": 2, "snapshot_pkl": "network-snapshot-000480.pkl", "timestamp": 1642456624.4780235}

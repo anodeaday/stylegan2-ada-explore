@@ -8,4 +8,4 @@ python generateNeil.py --outdir=out_anim --seeds=2200 --network=D:/Projects/dev/
 
 python style_mixingNeil.py --outdir=out_mix --rows=85 --cols=55,821,1789,293 --network=D:/Projects/dev/stylegan2-ada-pytorch/training-runs/00001-impressionist_landscapes-auto2/network-snapshot-001440.pkl
 
-python generateNeil.py --outdir=out_anim --seeds=2300 --gen_seeds=19,106,100,191,206,199,5546,47,223,18,49,189 --network=./training-runs/00002-impressionist_landscapes-auto2-resumecustom\network-snapshot-000440.pkl
+python generateNeil.py --outdir=out_anim --network=./training-runs/00002-impressionist_landscapes-auto2-resumecustom\network-snapshot-000440.pkl --seeds=2300 --gen_seeds=19,106,100,191,206,199,5546,47,223,18,49,189 --frames==250
