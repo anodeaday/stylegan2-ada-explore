@@ -24,16 +24,29 @@ import legacy
 
 import random, copy
 import math
+from tqdm import tqdm
+
+#for slerp
+from numpy import asarray
+from numpy import arccos
+from numpy import clip
+from numpy import dot
+from numpy import sin
+from numpy import linspace
+from numpy.linalg import norm
+
 
 class DNA:
     def __init__(self, G, generations, seed=None,generation_seeds=None):
         self.genes = create_random_vector(G,seed)
+        self.og_genes = create_random_vector(G,seed)
         self.generations = []
-        self.num_generations = generations
-        for i in range(generations+1):
+        self.num_generations = generations-1
+        for i in range(generations):
             if generation_seeds:
                 this_seed = generation_seeds[i]
-                self.generations.append(create_random_vector(G),seed=this_seed)
+                print(f"Generation {i} \t seed {this_seed}")
+                self.generations.append(create_random_vector(G, seed=this_seed))
             else:
                 self.generations.append(create_random_vector(G))
 
@@ -59,34 +72,65 @@ class DNA:
             else:
                 self.generations[target][0][i] -= speed
 
-    def mutate_generation(self,overall_progress,evolve=None):
+    def mutate_generation(self,overall_progress, evolve=None):
         #overall = 0-1 for sequence
         # 1 / 4 = 0.25
-        sequence_time = 1 / self.num_generations
+        sequence_time = 1 / len(self.generations)
+
         generation_target = overall_progress / sequence_time
-        generation_target = math.floor(generation_target) + 1
-        this_progress = (overall_progress % sequence_time) * self.num_generations
-        step_size = sequence_time / self.num_generations
-        #lerp = np.clip(1-step_size,0,1)
-        #lerp = pow(lerp,0.5)
+        generation_target = math.floor(generation_target)
+
+        #0.24 / 4 = 0.06
+        step_size = sequence_time / len(self.generations)
+        step_size *=2
+        #1-0.06 = 0.94
+        lerp = np.clip(1-step_size, 0, 1)
+        #lerp = pow(lerp, 0.5)
+
+
         if evolve:
-            self.mutate_target(generation_target,step_size)
+            self.mutate_target(generation_target, step_size)
         for i in range(len(self.genes[0])):
-            self.genes[0][i] = linear_interpolate(self.genes[0][i],
-                                                  self.generations[generation_target][0][i],
-                                                  1-step_size)
-        print(self.genes[0][0])
+            linear = True
+            if linear:
+                self.genes[0][i] = linear_interpolate(self.genes[0][i],
+                                                      self.generations[generation_target][0][i],
+                                                      lerp)
+            else:
+                vectors = interpolate_points(self.genes[0][i],
+                                             self.generations[generation_target][0][i],
+                                             25)
+                self.genes[0][i] = vectors[1]
 
 
 def linear_interpolate(code1, code2, alpha):
     return (alpha * code1) + ((1 - alpha) * code2)
     #return code1 * alpha + code2 * (1 - alpha)
 
-def generate_initial_population(quant, G,generations, seed=None):
+def slerp(val, low, high):
+    omega = arccos(clip(dot(low/norm(low), high/norm(high)), -1, 1))
+    so = sin(omega)
+    if so == 0:
+        # L'Hopital's rule/LERP
+        return (1.0-val) * low + val * high
+    return sin((1.0-val)*omega) / so * low + sin(val*omega) / so * high
+
+def interpolate_points(p1, p2, n_steps=10):
+    # interpolate ratios between the points
+    ratios = linspace(0, 1, num=n_steps)
+    # linear interpolate vectors
+    vectors = list()
+    for ratio in ratios:
+        v = slerp(ratio, p1, p2)
+        vectors.append(v)
+    return asarray(vectors)
+
+
+def generate_initial_population(quant, G,generations, seed=None,gen_seeds=None):
     if seed:
-        return [DNA(G, generations, seed=(seed + _)) for _ in range(quant)]
+        return [DNA(G, generations, seed=(seed + _), generation_seeds=gen_seeds) for _ in range(quant)]
     else:
-        return [DNA(G, generations) for _ in range(quant)]
+        return [DNA(G, generations, generation_seeds=gen_seeds) for _ in range(quant)]
 
 def _build_mating_pool(population, fitness):
     mating_pool = []
@@ -149,6 +193,7 @@ def num_range(s: str) -> List[int]:
 @click.pass_context
 @click.option('--network', 'network_pkl', help='Network pickle filename', required=True)
 @click.option('--seeds', type=num_range, help='List of random seeds')
+@click.option('--gen', type=num_range, help='List of random seeds')
 @click.option('--gen_seeds', type=num_range, help='List of random seeds')
 @click.option('--trunc', 'truncation_psi', type=float, help='Truncation psi', default=1, show_default=True)
 @click.option('--class', 'class_idx', type=int, help='Class label (unconditional if not specified)')
@@ -160,6 +205,7 @@ def generate_images(
     network_pkl: str,
     seeds: Optional[List[int]],
     gen_seeds: Optional[List[int]],
+    gen : int,
     truncation_psi: float,
     noise_mode: str,
     outdir: str,
@@ -235,26 +281,29 @@ def generate_images(
             os.makedirs(this_outdir, exist_ok=True)
             print('Generating image for seed %d (%d/%d) ...' % (seed, seed_idx, len(seeds)))
             population_size = 1
-            generations = 3
-            population = generate_initial_population(population_size, G, generations, seed=seed)
 
-            sequence_length = 125
-            fitness = []
-            for thing in range(population_size):
-                fitness.append(10)
+            if gen_seeds:
+                generations = len(gen_seeds)
+            elif gen:
+                generations = gen[0]
+            else:
+                generations = 5
+            population = generate_initial_population(population_size, G, generations, seed=seed,gen_seeds=gen_seeds)
+
+            sequence_length = 250
+            print(f"Creating sequence with length {sequence_length}\n"
+                  f"Number of generations {generations}\n")
             for i in range(population_size):
-                mutation_rate = 0
-                fitness_rate = 0
                 starting_psi = 0.3
                 psi_variation = 0.7
-                for run in range(sequence_length):
+                for run in tqdm(range(sequence_length)):
                     #mutation_rate += 1/sequence_length
                     starting_psi += psi_variation / sequence_length
                     out_psi = 1 - starting_psi
-                    out_psi = 0.5
+                    out_psi = 1
                     img = generate_image(G, population[i].genes,psi=out_psi)
                     PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{this_outdir}/seed{seed:04d}_pop{i:02d}_run{run:04d}.png')
-                    population = evolve_generation(population, sequence_length, run,evolve=True)
+                    population = evolve_generation(population, sequence_length, run,evolve=False)
 
     else:
         for seed_idx, seed in enumerate(seeds):
@@ -268,7 +317,7 @@ def generate_images(
             seed_progress = 0
             num_runs = 50
             psi_variation = 0.75
-            for run in range(num_runs):
+            for run in tqdm(range(num_runs)):
                 seed_progress += seed_blend / num_runs
                 #z = torch.from_numpy(rand + seed_progress).to(device)
                 rand[0][20] += seed_progress
