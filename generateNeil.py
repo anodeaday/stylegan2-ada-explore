@@ -22,16 +22,20 @@ import legacy
 
 #----------------------------------------------------------------------------
 
-import random, time, copy
+import random, copy
 import math
 
 class DNA:
-    def __init__(self, G, generations, seed=None):
+    def __init__(self, G, generations, seed=None,generation_seeds=None):
         self.genes = create_random_vector(G,seed)
         self.generations = []
         self.num_generations = generations
         for i in range(generations+1):
-            self.generations.append(create_random_vector(G))
+            if generation_seeds:
+                this_seed = generation_seeds[i]
+                self.generations.append(create_random_vector(G),seed=this_seed)
+            else:
+                self.generations.append(create_random_vector(G))
 
     def crossover(self, partner,mutation_rate):
         child = copy.deepcopy(self)
@@ -55,7 +59,7 @@ class DNA:
             else:
                 self.generations[target][0][i] -= speed
 
-    def mutate_generation(self,overall_progress):
+    def mutate_generation(self,overall_progress,evolve=None):
         #overall = 0-1 for sequence
         # 1 / 4 = 0.25
         sequence_time = 1 / self.num_generations
@@ -65,8 +69,8 @@ class DNA:
         step_size = sequence_time / self.num_generations
         #lerp = np.clip(1-step_size,0,1)
         #lerp = pow(lerp,0.5)
-
-        self.mutate_target(generation_target,step_size)
+        if evolve:
+            self.mutate_target(generation_target,step_size)
         for i in range(len(self.genes[0])):
             self.genes[0][i] = linear_interpolate(self.genes[0][i],
                                                   self.generations[generation_target][0][i],
@@ -91,21 +95,19 @@ def _build_mating_pool(population, fitness):
     return mating_pool
 
 def evolve(population, fitness, mutation_rate):
-    mating_pool = _build_mating_pool(population, fitness)
     new_population = []
     for _ in range(len(population)):
         mother = random.choice(population)
         father = random.choice(population)
-        child = mother.crossover(father,mutation_rate)
+        child = mother.crossover(father, mutation_rate)
         child.mutate(mutation_rate)
         new_population.append(child)
     return new_population
 
-def evolve_generation(population,sequence_length,cur_frame):
-    new_population = []
+def evolve_generation(population,sequence_length,cur_frame,evolve=None):
     over_all_progress = cur_frame/sequence_length
     for child in population:
-        child.mutate_generation(over_all_progress)
+        child.mutate_generation(over_all_progress,evolve)
     return population
 
 def create_random_vector(G,seed=None):
@@ -147,6 +149,7 @@ def num_range(s: str) -> List[int]:
 @click.pass_context
 @click.option('--network', 'network_pkl', help='Network pickle filename', required=True)
 @click.option('--seeds', type=num_range, help='List of random seeds')
+@click.option('--gen_seeds', type=num_range, help='List of random seeds')
 @click.option('--trunc', 'truncation_psi', type=float, help='Truncation psi', default=1, show_default=True)
 @click.option('--class', 'class_idx', type=int, help='Class label (unconditional if not specified)')
 @click.option('--noise-mode', help='Noise mode', type=click.Choice(['const', 'random', 'none']), default='const', show_default=True)
@@ -156,6 +159,7 @@ def generate_images(
     ctx: click.Context,
     network_pkl: str,
     seeds: Optional[List[int]],
+    gen_seeds: Optional[List[int]],
     truncation_psi: float,
     noise_mode: str,
     outdir: str,
@@ -250,8 +254,7 @@ def generate_images(
                     out_psi = 0.5
                     img = generate_image(G, population[i].genes,psi=out_psi)
                     PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{this_outdir}/seed{seed:04d}_pop{i:02d}_run{run:04d}.png')
-                    #population = evolve(population, fitness, mutation_rate)
-                    #population = evolve_generation(population, sequence_length, run)
+                    population = evolve_generation(population, sequence_length, run,evolve=True)
 
     else:
         for seed_idx, seed in enumerate(seeds):
