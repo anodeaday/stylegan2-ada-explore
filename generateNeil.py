@@ -72,11 +72,11 @@ class DNA:
             else:
                 self.generations[target][0][i] -= speed
 
-    def mutate_generation(self,overall_progress, evolve=None):
+    def mutate_generation(self,overall_progress, evolve=None,frames=None):
         #overall = 0-1 for sequence
         # 1 / 4 = 0.25
         sequence_time = 1 / len(self.generations)
-
+        steps = math.floor(frames * sequence_time)
         generation_target = overall_progress / sequence_time
         generation_target = math.floor(generation_target)
 
@@ -91,7 +91,7 @@ class DNA:
         if evolve:
             self.mutate_target(generation_target, step_size)
         for i in range(len(self.genes[0])):
-            linear = True
+            linear = False
             if linear:
                 self.genes[0][i] = linear_interpolate(self.genes[0][i],
                                                       self.generations[generation_target][0][i],
@@ -99,7 +99,7 @@ class DNA:
             else:
                 vectors = interpolate_points(self.genes[0][i],
                                              self.generations[generation_target][0][i],
-                                             25)
+                                             steps)
                 self.genes[0][i] = vectors[1]
 
 
@@ -151,7 +151,7 @@ def evolve(population, fitness, mutation_rate):
 def evolve_generation(population,sequence_length,cur_frame,evolve=None):
     over_all_progress = cur_frame/sequence_length
     for child in population:
-        child.mutate_generation(over_all_progress,evolve)
+        child.mutate_generation(over_all_progress,evolve=evolve,frames=sequence_length)
     return population
 
 def create_random_vector(G,seed=None):
@@ -193,7 +193,8 @@ def num_range(s: str) -> List[int]:
 @click.pass_context
 @click.option('--network', 'network_pkl', help='Network pickle filename', required=True)
 @click.option('--seeds', type=num_range, help='List of random seeds')
-@click.option('--gen', type=num_range, help='List of random seeds')
+@click.option('--gen', type=num_range, help='How many images to cycle through')
+@click.option('--frames', type=num_range, help='sequence length')
 @click.option('--gen_seeds', type=num_range, help='List of random seeds')
 @click.option('--trunc', 'truncation_psi', type=float, help='Truncation psi', default=1, show_default=True)
 @click.option('--class', 'class_idx', type=int, help='Class label (unconditional if not specified)')
@@ -206,6 +207,7 @@ def generate_images(
     seeds: Optional[List[int]],
     gen_seeds: Optional[List[int]],
     gen : int,
+    frames : int,
     truncation_psi: float,
     noise_mode: str,
     outdir: str,
@@ -275,6 +277,10 @@ def generate_images(
     # Generate images.
     use_original = False
 
+    sequence_length = 250
+    if frames:
+        sequence_length = frames
+
     if not use_original:
         for seed_idx, seed in enumerate(seeds):
             this_outdir = f"{outdir}/seed_{seed}"
@@ -290,7 +296,6 @@ def generate_images(
                 generations = 5
             population = generate_initial_population(population_size, G, generations, seed=seed,gen_seeds=gen_seeds)
 
-            sequence_length = 250
             print(f"Creating sequence with length {sequence_length}\n"
                   f"Number of generations {generations}\n")
             for i in range(population_size):
@@ -315,7 +320,7 @@ def generate_images(
             starting_psi = 0.1
             seed_blend = 5000
             seed_progress = 0
-            num_runs = 50
+            num_runs = sequence_length
             psi_variation = 0.75
             for run in tqdm(range(num_runs)):
                 seed_progress += seed_blend / num_runs
