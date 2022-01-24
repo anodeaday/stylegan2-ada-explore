@@ -13,6 +13,8 @@ import re
 from typing import List, Optional
 
 import click
+from torch import lerp
+
 import dnnlib
 import numpy as np
 import PIL.Image
@@ -35,6 +37,11 @@ from numpy import sin
 from numpy import linspace
 from numpy.linalg import norm
 
+from enum import Enum
+class Animator(Enum):
+    SIMPLE = 1
+    GENERATIONS = 2
+    POINT_EXPLORER = 3
 
 class DNA:
     def __init__(self, G, generations, seed=None,generation_seeds=None):
@@ -104,9 +111,20 @@ class DNA:
                 self.genes[0][i] = vectors
 
 
-def linear_interpolate(code1, code2, alpha):
+# generate points in latent space as input for the generator
+def generate_latent_points(latent_dim, n_samples, n_classes=10):
+    from numpy.random import randn
+    # generate points in the latent space
+    x_input = randn(latent_dim * n_samples)
+    # reshape into a batch of inputs for the network
+    z_input = x_input.reshape(n_samples, latent_dim)
+    return z_input
+
+
+def linear_interpolate(alpha,code1, code2):
     return (alpha * code1) + ((1 - alpha) * code2)
     #return code1 * alpha + code2 * (1 - alpha)
+
 
 def slerp(val, low, high):
     omega = arccos(clip(dot(low/norm(low), high/norm(high)), -1, 1))
@@ -116,16 +134,61 @@ def slerp(val, low, high):
         return (1.0-val) * low + val * high
     return sin((1.0-val)*omega) / so * low + sin(val*omega) / so * high
 
+def slerp2(t, v0, v1, DOT_THRESHOLD=0.9995):
+    '''
+    Spherical linear interpolation
+    Args:
+        t (float/np.ndarray): Float value between 0.0 and 1.0
+        v0 (np.ndarray): Starting vector
+        v1 (np.ndarray): Final vector
+        DOT_THRESHOLD (float): Threshold for considering the two vectors as
+                               colineal. Not recommended to alter this.
+    Returns:
+        v2 (np.ndarray): Interpolation vector between v0 and v1
+    '''
+    c = False
+    if not isinstance(v0,np.ndarray):
+        c = True
+        v0 = v0.detach().cpu().numpy()
+    if not isinstance(v1,np.ndarray):
+        c = True
+        v1 = v1.detach().cpu().numpy()
+    # Copy the vectors to reuse them later
+    v0_copy = np.copy(v0)
+    v1_copy = np.copy(v1)
+    # Normalize the vectors to get the directions and angles
+    v0 = v0 / np.linalg.norm(v0)
+    v1 = v1 / np.linalg.norm(v1)
+    # Dot product with the normalized vectors (can't use np.dot in W)
+    dot = np.sum(v0 * v1)
+    # If absolute value of dot product is almost 1, vectors are ~colineal, so use lerp
+    if np.abs(dot) > DOT_THRESHOLD:
+        return linear_interpolate(t, v0_copy, v1_copy)
+    # Calculate initial angle between v0 and v1
+    theta_0 = np.arccos(dot)
+    sin_theta_0 = np.sin(theta_0)
+    # Angle at timestep t
+    theta_t = theta_0 * t
+    sin_theta_t = np.sin(theta_t)
+    # Finish the slerp algorithm
+    s0 = np.sin(theta_0 - theta_t) / sin_theta_0
+    s1 = sin_theta_t / sin_theta_0
+    v2 = s0 * v0_copy + s1 * v1_copy
+    if c:
+        res = torch.from_numpy(v2).to("cuda")
+    else:
+        res = v2
+    return res
+
 def interpolate_points(p1, p2, n_steps=10):
-    return slerp(n_steps,p1,p2)
     # interpolate ratios between the points
     ratios = linspace(0, 1, num=n_steps)
     # linear interpolate vectors
     vectors = list()
     for ratio in ratios:
-        v = slerp(ratio, p1, p2)
+        v = slerp2(ratio, p1, p2)
         vectors.append(v)
-    return asarray(vectors)
+    return vectors
 
 
 def generate_initial_population(quant, G,generations, seed=None,gen_seeds=None):
@@ -197,6 +260,7 @@ def num_range(s: str) -> List[int]:
 @click.option('--seeds', type=num_range, help='List of random seeds')
 @click.option('--gen', type=num_range, help='How many images to cycle through')
 @click.option('--frames', type=num_range, help='sequence length')
+@click.option('--steps', type=num_range, help='steps between generations')
 @click.option('--gen_seeds', type=num_range, help='List of random seeds')
 @click.option('--trunc', 'truncation_psi', type=float, help='Truncation psi', default=1, show_default=True)
 @click.option('--class', 'class_idx', type=int, help='Class label (unconditional if not specified)')
@@ -210,6 +274,7 @@ def generate_images(
     gen_seeds: Optional[List[int]],
     gen : int,
     frames : int,
+    steps : int,
     truncation_psi: float,
     noise_mode: str,
     outdir: str,
@@ -283,13 +348,16 @@ def generate_images(
     if frames:
         sequence_length = frames[0]
 
-    if not use_original:
+
+    animator = Animator.POINT_EXPLORER
+
+
+    if animator == Animator.GENERATIONS:
         for seed_idx, seed in enumerate(seeds):
             this_outdir = f"{outdir}/seed_{seed}"
             os.makedirs(this_outdir, exist_ok=True)
             print('Generating image for seed %d (%d/%d) ...' % (seed, seed_idx, len(seeds)))
             population_size = 1
-
             if gen_seeds:
                 generations = len(gen_seeds)
             elif gen:
@@ -297,7 +365,6 @@ def generate_images(
             else:
                 generations = 5
             population = generate_initial_population(population_size, G, generations, seed=seed,gen_seeds=gen_seeds)
-
             print(f"Creating sequence with length {sequence_length}\n"
                   f"Number of generations {generations}\n")
             for i in range(population_size):
@@ -312,8 +379,7 @@ def generate_images(
                     img = generate_image(G, population[i].genes,psi=out_psi)
                     PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{this_outdir}/seed{seed:04d}_pop{i:02d}_run{run:04d}.png')
                     population = evolve_generation(population, sequence_length, run,evolve=True)
-
-    else:
+    elif animator == Animator.SIMPLE:
         for seed_idx, seed in enumerate(seeds):
             this_outdir = f"{outdir}/seed_{seed}"
             os.makedirs(this_outdir, exist_ok=True)
@@ -340,6 +406,54 @@ def generate_images(
                 img = G(z, label, truncation_psi=out_psi, noise_mode=noise_mode,)
                 img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
                 PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{this_outdir}/seed{seed:04d}_run{run:04d}.png')
+    elif animator == Animator.POINT_EXPLORER:
+        for seed_idx, seed in enumerate(seeds):
+            targets = list()
+            draw_vectors = list()
+            #create the first picture.
+            targets.append(create_random_vector(G,seed))
+            if gen_seeds:
+                generations = len(gen_seeds)
+            elif gen:
+                generations = gen[0]
+            else:
+                generations = 5
+            #create a range of new points to go to.
+            for i in range(generations+1):
+                if gen_seeds:
+                    targets.append(create_random_vector(G,gen_seeds[i]))
+                else:
+                    targets.append(create_random_vector(G))
+
+            #animation steps
+            if steps:
+                steps = steps[0]
+            elif sequence_length:
+                steps = int(sequence_length/generations)
+            else:
+                steps = 25
+
+            for target_idx, target in enumerate(targets):
+                this_target = target
+                next_target = target
+                try:
+                    next_target = targets[target_idx+1]
+                except:
+                    pass
+                intermediate = interpolate_points(target,next_target,steps)
+                draw_vectors = draw_vectors + intermediate
+#                draw_vectors.extend(intermediate)
+                pass
+
+            this_outdir = f"{outdir}/seed_{seed}"
+            os.makedirs(this_outdir, exist_ok=True)
+            for vector_id, vector in enumerate(draw_vectors):
+                z = torch.from_numpy(vector).to(device)
+                img = G(z, label, truncation_psi=truncation_psi, noise_mode=noise_mode, )
+                img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
+                PIL.Image.fromarray(img[0].cpu().numpy(), 'RGB').save(f'{this_outdir}/seed{seed:04d}_run{vector_id:04d}.png')
+
+        pass
 
 
 #----------------------------------------------------------------------------

@@ -4,3 +4,9 @@ __pycache__/
 *.mp4
 *.jpg
 *.pkl
+datasets/landscapes1024.zip
+datasets/vitasoy1024.zip
+*.mov
+datasets/FD1024.zip
+sources/
+training-runs/
