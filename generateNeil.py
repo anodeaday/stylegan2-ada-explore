@@ -447,7 +447,7 @@ def generate_images(
 
             this_outdir = f"{outdir}/seed_{seed}"
             os.makedirs(this_outdir, exist_ok=True)
-            for vector_id, vector in enumerate(draw_vectors):
+            for vector_id, vector in tqdm(enumerate(draw_vectors)):
                 z = torch.from_numpy(vector).to(device)
                 img = G(z, label, truncation_psi=truncation_psi, noise_mode=noise_mode, )
                 img = (img.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
